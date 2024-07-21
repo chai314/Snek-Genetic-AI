@@ -9,6 +9,7 @@ pygame.font.init()
 pygame.init()
 
 DRAW_LINES = False
+game_active = False
 STAT_FONT = pygame.font.SysFont(None, 36)
 gen = 0
 
@@ -19,6 +20,12 @@ pygame.display.set_caption("snek gaym")
 BLACK = (0, 0, 0)
 GREEN = (0, 255, 0)
 RED = (255, 0, 0)
+
+button_width, button_height = 200, 100
+button_x = (width - button_width) // 2
+button_y = (height - button_height) // 2
+
+
 
 # Define the snake class
 class Snake:
@@ -129,6 +136,14 @@ def draw_window(window, snakes, foods, gen):
     pygame.display.update()
 
 
+def draw_start_screen(window):
+    window.fill(BLACK)
+    pygame.draw.rect(window, GREEN, (button_x, button_y, button_width, button_height))
+    text = STAT_FONT.render("Start", True, BLACK)
+    text_rect = text.get_rect(center=(button_x + button_width // 2, button_y + button_height // 2))
+    window.blit(text, text_rect)
+    pygame.display.update()
+
 
 
 def eval_genomes(genomes, config):
@@ -137,7 +152,7 @@ def eval_genomes(genomes, config):
     snakes and sets their fitness based on the distance they
     reach in the game.
     """
-    global window, gen
+    global window, gen, game_active
     gen += 1
 
     nets = []
@@ -163,58 +178,69 @@ def eval_genomes(genomes, config):
 
     run = True
     timebomb = [0]*len(snakes)
-    max_time = 100
+    max_time = 200
 
     while run and snakes:
-        clock.tick(20)
+        clock.tick(15)
+        if not game_active:
+                draw_start_screen(window)
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        run = False
+                        pygame.quit()
+                        exit()
+                    elif event.type == pygame.MOUSEBUTTONDOWN:
+                        mouse_x, mouse_y = event.pos
+                        if button_x <= mouse_x <= button_x + button_width and button_y <= mouse_y <= button_y + button_height:
+                            game_active = True
+        else:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    run = False
+                    pygame.quit()
+                    quit()
+            
+            for snake in snakes:
+                snek_ind = snakes.index(snake)
+                sfood = foods[snek_ind]
+                timebomb[snek_ind] += 1
 
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                run = False
-                pygame.quit()
-                quit()
-        
-        for snake in snakes:
-            snek_ind = snakes.index(snake)
-            sfood = foods[snek_ind]
-            timebomb[snek_ind] += 1
+                inputs = (snake.vx, snake.vy, sfood.x()-snake.x(), sfood.y()-snake.y())
+                outputs = nets[snek_ind].activate(inputs)
+                max_output = max(outputs)
 
-            inputs = (snake.vx, snake.vy, sfood.x()-snake.x(), sfood.y()-snake.y())
-            outputs = nets[snek_ind].activate(inputs)
-            max_output = max(outputs)
+                if max_output > 0.5:
+                    match outputs.index(max_output):
+                        case 0: snake.change_direction("UP")
+                        case 1: snake.change_direction("DOWN")
+                        case 2: snake.change_direction("LEFT")
+                        case 3: snake.change_direction("RIGHT")
+                snake.move()
 
-            if max_output > 0.5:
-                match outputs.index(max_output):
-                    case 0: snake.change_direction("UP")
-                    case 1: snake.change_direction("DOWN")
-                    case 2: snake.change_direction("LEFT")
-                    case 3: snake.change_direction("RIGHT")
-            snake.move()
+                for snek_ind, sfood in enumerate(foods):
+                    if sfood.position in snakes[snek_ind].positions:
+                        ge[snek_ind].fitness += snakes[snek_ind].size
+                        snakes[snek_ind].size += 1
+                        timebomb[snek_ind] -= max_time #+ 2**(snake.size-15)
+                        sfood.spawn()
 
-            for snek_ind, sfood in enumerate(foods):
-                if sfood.position in snakes[snek_ind].positions:
-                    ge[snek_ind].fitness += snakes[snek_ind].size
-                    snakes[snek_ind].size += 1
-                    timebomb[snek_ind] -= max_time + 2**(snake.size-15)
-                    sfood.spawn()
+                if timebomb[snek_ind] > max_time or snake.positions[0] in snake.positions[1:] or not (0<=snake.x()<=width-10) or not (0<=snake.y()<=height-10):
+                # if snake.positions[0] in snake.positions[1:] or not (0<=snake.x()<=width-10) or not (0<=snake.y()<=height-10):
+                    nets.pop(snek_ind)
+                    ge.pop(snek_ind)
+                    snakes.pop(snek_ind)
+                    foods.pop(snek_ind)
+                    timebomb.pop(snek_ind)
+                    moved.pop(snek_ind)
+                    explored.pop(snek_ind)
 
-            if timebomb[snek_ind] > max_time or snake.positions[0] in snake.positions[1:] or not (0<=snake.x()<=width-10) or not (0<=snake.y()<=height-10):
-            # if snake.positions[0] in snake.positions[1:] or not (0<=snake.x()<=width-10) or not (0<=snake.y()<=height-10):
-                nets.pop(snek_ind)
-                ge.pop(snek_ind)
-                snakes.pop(snek_ind)
-                foods.pop(snek_ind)
-                timebomb.pop(snek_ind)
-                moved.pop(snek_ind)
-                explored.pop(snek_ind)
+            draw_window(window, snakes, foods, gen)
 
-        draw_window(window, snakes, foods, gen)
-
-        # # break if score gets large enough
-        # score = max(score, max(snake.size for snake in snakes)) if snakes else score
-        # if score >= 25:
-        #     pickle.dump(nets,open("best.pickle", "wb")) # or is it nets[0]?
-        #     break
+            # # break if score gets large enough
+            # score = max(score, max(snake.size for snake in snakes)) if snakes else score
+            # if score >= 25:
+            #     pickle.dump(nets,open("best.pickle", "wb")) # or is it nets[0]?
+            #     break
 
 
 def run(config_file):
